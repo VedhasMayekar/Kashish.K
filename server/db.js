@@ -1,61 +1,111 @@
-import { DatabaseSync } from "node:sqlite";
-import path from "node:path";
-import fs from "node:fs";
+import { neon } from "@neondatabase/serverless";
+import { getConfiguredPassword, hashPassword } from "./auth.js";
 
-const DB_PATH = process.env.DB_PATH || path.join(process.cwd(), "data", "app.db");
-fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
+const connectionString = process.env.NEON_MIGRATION_MODE === "true"
+  ? process.env.DATABASE_URL_UNPOOLED || process.env.POSTGRES_URL || process.env.DATABASE_URL
+  : process.env.POSTGRES_URL || process.env.DATABASE_URL;
+const sql = connectionString ? neon(connectionString) : null;
+let initialization;
 
-export const db = new DatabaseSync(DB_PATH);
+export async function query(text, params = []) {
+  if (!sql) {
+    throw new Error("PostgreSQL connection is not configured. Set POSTGRES_URL in Vercel.");
+  }
+  return sql.query(text, params);
+}
 
-db.exec("PRAGMA journal_mode = WAL;");
-db.exec("PRAGMA foreign_keys = ON;");
+async function transaction(statements) {
+  if (!sql) {
+    throw new Error("PostgreSQL connection is not configured. Set POSTGRES_URL in Vercel.");
+  }
+  return sql.transaction((tx) =>
+    statements.map(({ text, params = [] }) => tx.query(text, params)),
+  );
+}
 
-// Migration v1 — blogs + messages (additive only; never drops existing data)
-db.exec(`
-CREATE TABLE IF NOT EXISTS blogs (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  day_number INTEGER UNIQUE NOT NULL,
-  title TEXT NOT NULL,
-  slug TEXT UNIQUE NOT NULL,
-  content TEXT NOT NULL DEFAULT '',
-  status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'published')),
-  published_at TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-CREATE INDEX IF NOT EXISTS idx_blogs_status_published ON blogs(status, published_at);
-CREATE INDEX IF NOT EXISTS idx_blogs_day ON blogs(day_number);
+async function createSchema(bootstrapAdmin) {
+  await transaction([
+    { text: `
+      CREATE TABLE IF NOT EXISTS blogs (
+      id SERIAL PRIMARY KEY,
+      day_number INTEGER NOT NULL UNIQUE,
+      title TEXT NOT NULL,
+      slug TEXT NOT NULL UNIQUE,
+      content TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'published')),
+      published_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    ` },
+    { text: `
+      CREATE TABLE IF NOT EXISTS messages (
+      id SERIAL PRIMARY KEY,
+      sender_name TEXT,
+      message_content TEXT NOT NULL,
+      blog_id INTEGER REFERENCES blogs(id) ON DELETE SET NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      is_read BOOLEAN NOT NULL DEFAULT FALSE CHECK (is_read IN (TRUE, FALSE)),
+      read_at TIMESTAMPTZ
+      )
+    ` },
+    { text: `
+      CREATE TABLE IF NOT EXISTS admin (
+      id INTEGER PRIMARY KEY,
+      password_hash TEXT NOT NULL
+      )
+    ` },
+    { text: `
+      CREATE TABLE IF NOT EXISTS sessions (
+      token_hash CHAR(64) PRIMARY KEY,
+      admin_id INTEGER NOT NULL REFERENCES admin(id) ON DELETE CASCADE,
+      expires_at TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    ` },
+    { text: `
+      CREATE TABLE IF NOT EXISTS message_rate_limits (
+      ip_hash CHAR(64) PRIMARY KEY,
+      window_started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      request_count INTEGER NOT NULL CHECK (request_count > 0)
+      )
+    ` },
+    { text: "CREATE INDEX IF NOT EXISTS idx_blogs_status_published ON blogs(status, published_at)" },
+    { text: "CREATE INDEX IF NOT EXISTS idx_blogs_day ON blogs(day_number)" },
+    { text: "CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at)" },
+    { text: "CREATE INDEX IF NOT EXISTS idx_messages_read ON messages(is_read)" },
+    { text: "CREATE INDEX IF NOT EXISTS idx_messages_blog ON messages(blog_id)" },
+  ]);
 
-CREATE TABLE IF NOT EXISTS messages (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  sender_name TEXT,
-  message_content TEXT NOT NULL,
-  blog_id INTEGER REFERENCES blogs(id) ON DELETE SET NULL,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  is_read INTEGER NOT NULL DEFAULT 0 CHECK (is_read IN (0, 1)),
-  read_at TEXT
-);
-CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at);
-CREATE INDEX IF NOT EXISTS idx_messages_read ON messages(is_read);
-CREATE INDEX IF NOT EXISTS idx_messages_blog ON messages(blog_id);
+  const admins = await query("SELECT id FROM admin LIMIT 1");
+  if (bootstrapAdmin && admins.length === 0) {
+    const password = getConfiguredPassword();
+    if (!password) {
+      throw new Error("ADMIN_PASSWORD is required to initialize the first admin account.");
+    }
+    await query(
+      "INSERT INTO admin (id, password_hash) VALUES (1, $1) ON CONFLICT (id) DO NOTHING",
+      [hashPassword(password)],
+    );
+  }
 
-CREATE TABLE IF NOT EXISTS admin (
-  id INTEGER PRIMARY KEY,
-  password_hash TEXT NOT NULL
-);
+  await query("DELETE FROM sessions WHERE expires_at <= NOW()");
+}
 
-CREATE TABLE IF NOT EXISTS sessions (
-  token TEXT PRIMARY KEY,
-  admin_id INTEGER NOT NULL REFERENCES admin(id) ON DELETE CASCADE,
-  expires_at TEXT NOT NULL,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-`);
+export function initializeDatabase({ bootstrapAdmin = true } = {}) {
+  if (!initialization) {
+    initialization = createSchema(bootstrapAdmin).catch((error) => {
+      initialization = undefined;
+      throw error;
+    });
+  }
+  return initialization;
+}
 
 export function rowToBlog(row) {
   if (!row) return null;
   return {
-    id: row.id,
+    id: Number(row.id),
     dayNumber: row.day_number,
     title: row.title,
     slug: row.slug,
@@ -70,11 +120,11 @@ export function rowToBlog(row) {
 export function rowToMessage(row) {
   if (!row) return null;
   return {
-    id: row.id,
+    id: Number(row.id),
     senderName: row.sender_name || "Anonymous",
     senderNameRaw: row.sender_name,
     messageContent: row.message_content,
-    blogId: row.blog_id,
+    blogId: row.blog_id == null ? null : Number(row.blog_id),
     blogTitle: row.blog_title || null,
     blogDayNumber: row.blog_day_number || null,
     createdAt: row.created_at,

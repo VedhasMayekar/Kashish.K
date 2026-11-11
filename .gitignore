@@ -19,3 +19,7 @@ data/*.db-wal
 .vscode/
 .DS_Store
 Thumbs.db
+.vercel/
+.neon
+
+.skills-lock.json

@@ -3,30 +3,36 @@
 Additive enhancement to the existing Probably Dora-Thor Universe site.
 The original letter journeys, memories, timeline, audio and design are untouched.
 
-## Architecture (preserved)
+## Architecture
 - Existing site: React + Vite + TypeScript + Tailwind + Framer Motion.
   - All 17 original chapters, `src/data/memories.ts`, audio, components and design are untouched.
   - `src/App.tsx` only gained a hash router (`#blogs`, `#blog/:id`, `#admin`) + floating nav + modal.
-- New backend: dependency-free Node.js (`node:http`) + SQLite (`node:sqlite` built-in). No new npm packages.
-  - Files: `server/index.js` (API + static hosting), `server/db.js` (schema), `server/auth.js` (scrypt hash + sessions).
-  - DB file: `data/app.db` (auto-created, git-ignored).
-  - Production: `npm run build && npm start` → http://localhost:3001 (API + site on one port).
-  - Dev: `npm run dev` (Vite :5173, proxies `/api` → :3001) + `npm run server` (:3001).
+- API: Vercel Node.js serverless function at `api/[...path].js`; shared database/auth
+  helpers are in `server/db.js` and `server/auth.js`.
+- Database: Neon PostgreSQL via `@neondatabase/serverless` and `POSTGRES_URL`.
+  Existing `data/app.db` is retained as the source for one-time import using
+  `npm run migrate:neon`.
+- Production: Vercel serves the Vite build and `/api/...` functions from the same
+  domain. No long-running Node server or local production database is used.
+- Local functions: `vercel dev` after linking the project and pulling environment
+  variables. `npm run dev` remains the Vite-only frontend server.
 
 ## Inspect-before-changes findings (Phase 1)
 - Stack: React 18 + Vite 5 + TS 5 + Tailwind 4 + Framer Motion + lucide-react. No backend, no DB, no auth, no env vars before this enhancement.
 - Reused: StarfieldBackground, glass-card styling, font theme, scene patterns, Icon registry (MemoryCard etc.).
-- No existing data to migrate; tables are created additively with `CREATE TABLE IF NOT EXISTS`.
+- Existing data is imported to Neon by the guarded `scripts/migrate-sqlite-to-neon.js`
+  command; the source SQLite database is not deleted or modified.
 
 ## Environment variables
-- `ADMIN_PASSWORD` (**required**) — your admin password (hashed with scrypt; never in frontend code). The server now **refuses to start** if it is missing/empty — the old fallback password was removed because a database first created without the env var kept the fallback hash permanently, which is why correct passwords then failed with "Invalid password". The login endpoint also returns a clear 500 config error (instead of a misleading 401) when the env var is absent.
-- `PORT` (optional, default 3001), `DB_PATH` (optional, default `./data/app.db`).
-- Passwords are trimmed of accidental leading/trailing whitespace on both hash and verify, so shell newlines can't cause mismatches.
-- To change the admin password later: stop the server, delete the single `admin` row from `data/app.db` (or delete `data/app.db` entirely — this also deletes messages/blogs), set the new `ADMIN_PASSWORD`, and restart.
+- `POSTGRES_URL` — Neon PostgreSQL connection string; server-only, never use a `VITE_` variable.
+- `APP_ORIGIN` — exact Vercel origin, such as `https://sorrykashish.vercel.app`, used to validate admin state-changing requests.
+- `ADMIN_PASSWORD` — required only to bootstrap an empty Neon admin table. The SQLite import preserves the existing scrypt hash; changing this environment variable does not reset an existing admin password.
+- Vercel sets `NODE_ENV` for deployment. There is no `PORT` or `DB_PATH` in production.
 
 ### Admin auth diagnostics
-Startup and login print safe, secret-free logs: whether `ADMIN_PASSWORD` is present, whether verification succeeded/failed, whether the admin record was found, session creation, cookie issuance, and logout invalidation. No passwords, hashes, or session tokens are ever logged.
-Verified by end-to-end tests (missing-env startup failure, wrong password 401, correct password 200 + cookie, session persistence, public 401s, logout invalidation).
+Passwords and session tokens are not logged. Production cookies are `HttpOnly`,
+`Secure`, `SameSite=Lax`, host-only, and expire after 12 hours. Only session-token
+hashes are stored in Neon. Admin writes require the exact configured `APP_ORIGIN`.
 
 ## API
 - `GET /api/blogs` — published blogs only (drafts never returned).
@@ -38,15 +44,20 @@ Verified by end-to-end tests (missing-env startup failure, wrong password 401, c
 - `GET/POST /api/admin/blogs`, `PUT/DELETE /api/admin/blogs/:id`, `PATCH /api/admin/blogs/:id/publish`
 
 ## Files created
-- `server/index.js`, `server/db.js`, `server/auth.js` — backend + DB + auth.
+- `api/[...path].js` — Vercel API function; `server/db.js` and `server/auth.js` —
+  Neon database/schema and scrypt/session helpers.
+- `scripts/migrate-sqlite-to-neon.js` — guarded import of the existing SQLite database.
+- `VERCEL_NEON.md` — setup, import, deployment, and verification instructions.
 - `src/types.ts`, `src/api.ts` — shared types + API client.
 - `src/components/FloatingNav.tsx`, `src/components/MessageModal.tsx`, `src/components/BlogCard.tsx`, `src/components/BlogContent.tsx`.
 - `src/scenes/BlogListScene.tsx`, `src/scenes/BlogDetailScene.tsx`, `src/scenes/AdminScene.tsx` (inbox).
 - `ENHANCEMENT.md`, `.env.example`.
 
-## Files modified
-- `src/App.tsx` (hash router + nav/modal wiring only — home journey logic preserved).
-- `vite.config.ts` (dev `/api` proxy), `package.json` (`server`/`start` scripts), `.gitignore` (DB files).
+## Files changed for the serverless migration
+- `server/index.js` and the SQLite implementation in `server/db.js` are replaced by
+  the Vercel function and Neon database helper.
+- `package.json` and `package-lock.json` include the Neon driver and SQLite import command.
+- `vite.config.ts` no longer proxies API calls to a local fixed-port server.
 
 ## How to write a blog daily
 The admin screen currently shows the message inbox. Blogs are managed through these admin HTTP calls (log in first — the login sets an HttpOnly `admin_session` cookie):
@@ -58,8 +69,13 @@ The admin screen currently shows the message inbox. Blogs are managed through th
 ## How to view messages
 Open `#admin`, log in, read/mark/delete messages. The inbox polls every 15 seconds and shows totals, unread/read counts, search, filters, sort, and which blog (if any) a message came from.
 
-## Testing results (automated, against the live server)
-All 29 checks passed: unauthenticated `/admin/messages` → 401; wrong password → 401; draft blogs hidden from public list/detail (404); publish keeps drafts private until published; newest-first ordering; 4 consecutive no-login submissions (named, anonymous, different name, blog-linked) each create separate records; empty message rejected; admin search/filter/read-mark/delete; deleting a blog keeps messages; logout invalidates the session. Static site, API and `/audio/voice-note.ogg` all served with 200.
+## Verification
+The frontend type-check/build and serverless handler smoke checks pass. The previous
+SQLite backend's end-to-end checks are historical and have not been rerun against a
+Neon database. Complete the live API/session/database checks in `VERCEL_NEON.md` after
+setting up Neon and importing the local database.
 
 ## Privacy note
-Messages live in the local SQLite DB on the server. Anyone with access to the server files or database can read them; they are not end-to-end encrypted, and hosting/database providers may have their own access. Keep the server folder private and use HTTPS in production.
+Messages live in Neon PostgreSQL. Database access and hosting providers may expose
+their contents; messages are not end-to-end encrypted. Keep connection credentials
+server-only and use HTTPS in production.
