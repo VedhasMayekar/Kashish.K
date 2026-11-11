@@ -1,23 +1,10 @@
-import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { BookOpenText, Loader2 } from "lucide-react";
+import { BookOpenText } from "lucide-react";
 import BlogCard from "../components/BlogCard";
-import { fetchBlogs } from "../api";
-import type { Blog } from "../types";
+import { journalEntries } from "../data/journal";
 
 export default function BlogListScene({ onOpen }: { onOpen: (id: number) => void }) {
-  const [blogs, setBlogs] = useState<Blog[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    fetchBlogs()
-      .then(setBlogs)
-      .catch(() => setError("Could not load the journal right now. Please check your connection and try again."))
-      .finally(() => setLoading(false));
-  }, []);
-
-  const [latest, ...older] = blogs;
+  const [latest, ...older] = journalEntries;
 
   return (
     <section className="mx-auto min-h-[100dvh] w-full max-w-6xl px-5 pb-40 pt-24 sm:px-8 sm:pt-28">
@@ -29,17 +16,7 @@ export default function BlogListScene({ onOpen }: { onOpen: (id: number) => void
         </p>
       </motion.div>
 
-      {loading && (
-        <div className="flex justify-center pt-20">
-          <Loader2 className="h-8 w-8 animate-spin text-violet-300" aria-label="Loading" />
-        </div>
-      )}
-
-      {error && (
-        <p role="alert" className="mx-auto mt-16 max-w-md rounded-3xl border border-red-300/25 bg-red-400/10 px-5 py-4 text-center text-sm text-red-200">{error}</p>
-      )}
-
-      {!loading && !error && blogs.length === 0 && (
+      {journalEntries.length === 0 && (
         <div className="mx-auto mt-16 max-w-md text-center">
           <BookOpenText className="mx-auto h-10 w-10 text-violet-300/60" aria-hidden="true" />
           <p className="font-serif-display mt-4 text-2xl text-white">The journal is quiet for now.</p>
@@ -49,7 +26,7 @@ export default function BlogListScene({ onOpen }: { onOpen: (id: number) => void
         </div>
       )}
 
-      {!loading && latest && (
+      {latest && (
         <>
           <motion.article
             initial={{ opacity: 0, y: 16, filter: "blur(6px)" }}
@@ -57,9 +34,16 @@ export default function BlogListScene({ onOpen }: { onOpen: (id: number) => void
             transition={{ duration: 0.8, ease: "easeOut" }}
             className="glass-card mx-auto mt-12 max-w-3xl rounded-3xl p-7 sm:p-9"
           >
-            <span className="rounded-full border border-amber-200/40 bg-amber-200/10 px-3 py-1 text-[11px] uppercase tracking-[0.2em] text-amber-100">
-              Latest · Day {latest.dayNumber}
-            </span>
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="rounded-full border border-amber-200/40 bg-amber-200/10 px-3 py-1 text-[11px] uppercase tracking-[0.2em] text-amber-100">
+                Latest · Day {latest.dayNumber}
+              </span>
+              {latest.date && (
+                <time dateTime={latest.date} className="text-xs uppercase tracking-[0.15em] text-violet-200/60">
+                  {new Date(`${latest.date}T12:00:00`).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" })}
+                </time>
+              )}
+            </div>
             <h2 className="font-serif-display mt-5 text-3xl leading-tight text-white sm:text-4xl">{latest.title}</h2>
             <p className="mt-3 line-clamp-3 text-base leading-relaxed text-violet-100/85">
               {latest.content.replace(/[#>*`]/g, "").slice(0, 260)}

@@ -22,10 +22,10 @@ export default function FloatingNav({ view, onHome, onBlogs, onMessage }: Props)
       animate={{ y: 0, opacity: 1 }}
       transition={{ duration: 0.6, ease: "easeOut" }}
       aria-label="Primary"
-      className="fixed inset-x-0 z-40 flex justify-center px-3"
+      className="fixed inset-x-0 z-50 flex justify-center px-3"
       style={{ bottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
     >
-      <div className="flex w-full max-w-md items-center gap-1 rounded-full border border-white/12 bg-black/70 p-1.5 shadow-[0_18px_45px_rgba(0,0,0,0.55)] backdrop-blur-xl sm:max-w-lg sm:gap-2 sm:p-2">
+      <div className="flex w-full max-w-md items-center gap-1 rounded-full border border-white/12 bg-black/85 p-1.5 shadow-[0_18px_45px_rgba(0,0,0,0.55)] backdrop-blur-xl sm:max-w-lg sm:gap-2 sm:p-2">
         <button type="button" onClick={onHome} aria-current={view === "home" ? "page" : undefined} className={item(view === "home")}>
           <Home className="h-[18px] w-[18px] shrink-0" aria-hidden="true" />
           <span className="truncate">Home</span>

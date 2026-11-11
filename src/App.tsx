@@ -18,7 +18,7 @@ import BlogListScene from "./scenes/BlogListScene";
 import BlogDetailScene from "./scenes/BlogDetailScene";
 import AdminScene from "./scenes/AdminScene";
 import { letterScenes, letterScenesB } from "./data/memories";
-import type { Blog } from "./types";
+import type { JournalEntry } from "./data/journal";
 
 const ALL_LETTER_SCENES = [...letterScenes, ...letterScenesB];
 
@@ -138,7 +138,7 @@ export default function App() {
 
       {route.view === "home" && <ProgressIndicator index={index} total={total} />}
 
-      <main className="relative z-10">
+      <main className={`relative z-10 ${route.view === "admin" ? "" : "pb-[calc(6rem+env(safe-area-inset-bottom))] sm:pb-0"}`}>
         <AnimatePresence mode="wait">
           <motion.div
             key={activeKey}
@@ -155,7 +155,7 @@ export default function App() {
                   blogId={route.blogId}
                   onBack={openBlogs}
                   onOpen={openBlog}
-                  onMessage={(b: Blog) => openMessage({ blogId: b.id, label: `Day ${b.dayNumber} — ${b.title}` })}
+                  onMessage={(entry: JournalEntry) => openMessage({ blogId: null, label: `Day ${entry.dayNumber} — ${entry.title}` })}
                 />
               ) : (
                 <BlogListScene onOpen={openBlog} />

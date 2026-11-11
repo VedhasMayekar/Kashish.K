@@ -43,36 +43,37 @@ generic and do not expose SQL, credentials, or stack traces.
 1. Create a Neon project and database. Do not delete or replace the local
    `data/app.db`.
 2. Set the Vercel project's Node.js runtime to version 22.x or newer.
-3. In Vercel, open the existing `sorrykashish` project and connect the Neon integration
-   or copy the Neon pooled connection string into the Vercel environment variable
-   `POSTGRES_URL`. Use Production (and Preview/Development too if you want those
-   deployments to access Neon). Preview deployments use the same fixed `APP_ORIGIN`,
-   so their admin state-changing requests are intentionally rejected unless you set
-   the Preview `APP_ORIGIN` to that exact preview URL. Never put the database URL in
-   a `VITE_` variable.
-4. Set these Vercel environment variables:
+3. The Neon CLI linked this workspace and pulled connection settings into the ignored
+   `.env.local`. The pooled `DATABASE_URL` is used by the app; the direct
+   `DATABASE_URL_UNPOOLED` is used only by the SQLite import script. Neither value is
+   committed.
+4. In Vercel, open the existing `sorrykashish` project and add `DATABASE_URL` using
+   the pooled Neon connection string. Use Production (and Preview/Development too if
+   you want those deployments to access Neon). Preview deployments use the fixed
+   `APP_ORIGIN`, so their admin state-changing requests are intentionally rejected
+   unless you set the Preview `APP_ORIGIN` to that exact preview URL. Never put the
+   database URL in a `VITE_` variable.
+5. Set these Vercel environment variables:
 
    | Variable | Value |
    | --- | --- |
-   | `POSTGRES_URL` | Neon pooled PostgreSQL connection string; server-only secret. |
+   | `DATABASE_URL` | Neon pooled PostgreSQL connection string; server-only secret. |
    | `APP_ORIGIN` | `https://sorrykashish.vercel.app` (exact origin, no trailing slash). |
    | `ADMIN_PASSWORD` | Existing admin password, for first-admin bootstrap only. It does not replace an imported password hash. |
 
    Vercel sets `NODE_ENV=production` for production deployments. No `PORT`,
-   `DATABASE_PATH`, `VITE_API_BASE_URL`, CORS domain, or client-side database secret
-   is needed.
-5. Import the local database before the first deployment, while the Neon destination
+   `DATABASE_PATH`, `POSTGRES_URL`, `VITE_API_BASE_URL`, CORS domain, or client-side
+   database secret is needed.
+6. Import the local database before the first deployment, while the Neon destination
    is empty:
-   - In Vercel, use **Settings → Environment Variables → Pull** or run
-     `npx vercel env pull .env.local` from the repository root.
-   - Make sure `.env.local` contains the target `POSTGRES_URL`. If the local file does
-     not contain `ADMIN_PASSWORD`, add it locally only if Neon has no admin row; do
-     not commit `.env.local`.
+   - `.env.local` already contains the Neon connection variables pulled by the CLI.
+     Add `ADMIN_PASSWORD` locally only if Neon has no admin row; do not commit
+     `.env.local`.
    - For local `vercel dev`, set `APP_ORIGIN=http://localhost:3000` in `.env.local`;
      keep `APP_ORIGIN=https://sorrykashish.vercel.app` in Vercel Production.
-   - Run `npm run migrate:neon`. The command reads `data/app.db`, writes to Neon, and
-     prints row counts only. It does not print message contents, password hashes, or
-     connection secrets.
+   - Run `npm run migrate:neon`. The command reads `data/app.db`, connects with
+     `DATABASE_URL_UNPOOLED`, writes to Neon, and prints row counts only. It does not
+     print message contents, password hashes, or connection secrets.
    - If the importer reports an interrupted partial import, inspect the Neon database
      first, then resume only that same import with
      `npm run migrate:neon -- --resume`. Do not use `--resume` to merge unrelated

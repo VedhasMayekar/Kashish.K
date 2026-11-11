@@ -1,9 +1,11 @@
 import { motion } from "framer-motion";
 import { ArrowRight, CalendarDays } from "lucide-react";
-import type { Blog } from "../types";
+import type { JournalEntry } from "../data/journal";
 
-export default function BlogCard({ blog, onOpen, index }: { blog: Blog; onOpen: () => void; index: number }) {
-  const date = blog.publishedAt ? new Date(blog.publishedAt).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" }) : "";
+export default function BlogCard({ blog, onOpen, index }: { blog: JournalEntry; onOpen: () => void; index: number }) {
+  const date = blog.date
+    ? new Date(`${blog.date}T12:00:00`).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" })
+    : "";
   const excerpt = blog.content.replace(/[#>*`]/g, "").split(/\n\s*\n/)[0]?.slice(0, 180) || "";
 
   return (

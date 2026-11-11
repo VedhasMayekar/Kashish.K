@@ -10,7 +10,7 @@ interface Props {
 
 export default function SceneNavigation({ onPrev, onNext, isFirst, isLast, onRestart }: Props) {
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 px-4 pb-4 sm:px-6 sm:pb-6">
+    <div className="pointer-events-none fixed inset-x-0 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-40 px-4 pb-4 sm:bottom-0 sm:px-6 sm:pb-6">
       <div className="pointer-events-auto mx-auto flex max-w-6xl items-center justify-between gap-3">
         <button
           type="button" onClick={onPrev} disabled={isFirst} aria-label="Previous scene"

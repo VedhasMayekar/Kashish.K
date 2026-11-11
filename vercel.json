@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/:path((?!index(?:/|$)).*)",
+      "destination": "/api/index?__vercel_path=:path"
+    }
+  ]
+}

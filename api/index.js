@@ -116,7 +116,9 @@ async function isRateLimited(req) {
 
 async function handle(req, res) {
   const url = new URL(req.url, "https://vercel.invalid");
-  const pathname = url.pathname.replace(/\/+$/, "") || "/";
+  const rewrittenPath = url.searchParams.get("__vercel_path");
+  const requestedPath = rewrittenPath === null ? url.pathname : `/api/${rewrittenPath}`;
+  const pathname = requestedPath.replace(/\/+$/, "") || "/";
   const method = req.method || "GET";
 
   if (Number(req.headers["content-length"] || 0) > 2_000_000) {

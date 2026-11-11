@@ -1,27 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { ArrowLeft, ArrowRight, CalendarDays, Loader2, Send } from "lucide-react";
+import { ArrowLeft, ArrowRight, CalendarDays, Send } from "lucide-react";
 import BlogContent from "../components/BlogContent";
-import { fetchBlog, fetchBlogs } from "../api";
-import type { Blog } from "../types";
+import { getJournalEntry, journalEntries, type JournalEntry } from "../data/journal";
 
-interface Props { blogId: number; onBack: () => void; onOpen: (id: number) => void; onMessage: (blog: Blog) => void }
+interface Props { blogId: number; onBack: () => void; onOpen: (id: number) => void; onMessage: (blog: JournalEntry) => void }
 
 export default function BlogDetailScene({ blogId, onBack, onOpen, onMessage }: Props) {
-  const [blog, setBlog] = useState<Blog | null>(null);
-  const [siblings, setSiblings] = useState<Blog[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const blog = getJournalEntry(blogId);
   const [progress, setProgress] = useState(0);
   const articleRef = useRef<HTMLElement>(null);
-
-  useEffect(() => {
-    setLoading(true); setError("");
-    Promise.all([fetchBlog(blogId), fetchBlogs()])
-      .then(([b, list]) => { setBlog(b); setSiblings(list); })
-      .catch(() => setError("This entry could not be loaded."))
-      .finally(() => setLoading(false));
-  }, [blogId]);
 
   useEffect(() => {
     const onScroll = () => {
@@ -34,11 +22,11 @@ export default function BlogDetailScene({ blogId, onBack, onOpen, onMessage }: P
     window.addEventListener("scroll", onScroll, { passive: true });
     onScroll();
     return () => window.removeEventListener("scroll", onScroll);
-  }, [blog]);
+  }, [blogId]);
 
-  const idx = siblings.findIndex((b) => b.id === blogId);
-  const prev = idx >= 0 && idx < siblings.length - 1 ? siblings[idx + 1] : null;
-  const next = idx > 0 ? siblings[idx - 1] : null;
+  const idx = journalEntries.findIndex((entry) => entry.id === blogId);
+  const newer = idx > 0 ? journalEntries[idx - 1] : null;
+  const older = idx >= 0 && idx < journalEntries.length - 1 ? journalEntries[idx + 1] : null;
 
   const navBtn = "flex flex-1 items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-violet-100 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40";
 
@@ -52,18 +40,15 @@ export default function BlogDetailScene({ blogId, onBack, onOpen, onMessage }: P
         <ArrowLeft className="h-4 w-4" aria-hidden="true" /> All entries
       </button>
 
-      {loading && <div className="flex justify-center pt-24"><Loader2 className="h-8 w-8 animate-spin text-violet-300" aria-label="Loading" /></div>}
-      {error && <p role="alert" className="mt-16 rounded-3xl border border-red-300/25 bg-red-400/10 px-5 py-4 text-center text-sm text-red-200">{error}</p>}
-
-      {blog && !loading && (
+      {blog ? (
         <>
           <motion.header initial={{ opacity: 0, y: 14, filter: "blur(6px)" }} animate={{ opacity: 1, y: 0, filter: "blur(0px)" }} transition={{ duration: 0.8, ease: "easeOut" }} className="mt-10">
             <span className="rounded-full border border-violet-300/30 bg-violet-400/15 px-3 py-1 text-[11px] uppercase tracking-[0.2em] text-violet-100">Day {blog.dayNumber}</span>
             <h1 className="font-serif-display text-glow mt-5 text-4xl leading-tight text-white sm:text-5xl">{blog.title}</h1>
-            {blog.publishedAt && (
+            {blog.date && (
               <p className="mt-4 flex items-center gap-2 text-sm tracking-[0.15em] text-violet-200/70">
                 <CalendarDays className="h-4 w-4" aria-hidden="true" />
-                {new Date(blog.publishedAt).toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
+                <time dateTime={blog.date}>{new Date(`${blog.date}T12:00:00`).toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</time>
               </p>
             )}
             <div aria-hidden="true" className="mt-7 h-px w-24 bg-gradient-to-r from-violet-300/70 to-transparent" />
@@ -81,22 +66,26 @@ export default function BlogDetailScene({ blogId, onBack, onOpen, onMessage }: P
           </div>
 
           <nav aria-label="Blog navigation" className="mt-6 flex flex-col gap-3 sm:flex-row">
-            <button type="button" disabled={!prev} onClick={() => prev && onOpen(prev.id)} className={navBtn}>
+            <button type="button" disabled={!newer} onClick={() => newer && onOpen(newer.id)} className={navBtn}>
               <ArrowLeft className="h-4 w-4 shrink-0" aria-hidden="true" />
               <span className="min-w-0">
                 <span className="block text-[10px] uppercase tracking-[0.2em] text-violet-200/60">Newer</span>
-                <span className="block truncate">{prev ? `Day ${prev.dayNumber} — ${prev.title}` : "No newer entry"}</span>
+                <span className="block truncate">{newer ? `Day ${newer.dayNumber} — ${newer.title}` : "No newer entry"}</span>
               </span>
             </button>
-            <button type="button" disabled={!next} onClick={() => next && onOpen(next.id)} className={navBtn + " sm:ml-auto"}>
+            <button type="button" disabled={!older} onClick={() => older && onOpen(older.id)} className={navBtn + " sm:ml-auto"}>
               <span className="min-w-0 flex-1">
                 <span className="block text-[10px] uppercase tracking-[0.2em] text-violet-200/60">Older</span>
-                <span className="block truncate">{next ? `Day ${next.dayNumber} — ${next.title}` : "No older entry"}</span>
+                <span className="block truncate">{older ? `Day ${older.dayNumber} — ${older.title}` : "No older entry"}</span>
               </span>
               <ArrowRight className="h-4 w-4 shrink-0" aria-hidden="true" />
             </button>
           </nav>
         </>
+      ) : (
+        <p role="status" className="mt-16 rounded-3xl border border-white/10 bg-white/5 px-5 py-4 text-center text-sm text-violet-100/80">
+          This journal entry is not available.
+        </p>
       )}
     </section>
   );
