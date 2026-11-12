@@ -19,6 +19,7 @@ const specialTitles: Record<number, string> = {
 
 const specialDates: Record<number, string> = {
   1: "2026-11-11",
+  2: "2026-11-12",
 };
 
 export const journalEntries: JournalEntry[] = Object.entries(dayFiles)
